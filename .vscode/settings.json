@@ -1,0 +1,5 @@
+{
+    "files.associations": {
+        "slcan.h": "c"
+    }
+}

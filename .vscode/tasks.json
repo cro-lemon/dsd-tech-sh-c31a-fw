@@ -1,0 +1,79 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build CANable2",
+            "type": "shell",
+            "command": "make",
+            "args": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": {
+                "owner": "gcc",
+                "fileLocation": "absolute",
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Clean CANable2",
+            "type": "shell",
+            "command": "make",
+            "args": ["clean"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Flash DFU",
+            "type": "shell",
+            "command": "dfu-util",
+            "args": [
+                "-d", "0483:df11",
+                "-c", "1",
+                "-i", "0",
+                "-a", "0",
+                "-s", "0x08000000", 
+                "-D", "build/dsd-tech-sh-c31a-fw.bin",
+                "-v"
+            ],
+            "group": "build",
+            "dependsOn": "Build CANable2"
+        },
+        {
+            "label": "Build and Flash",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Build CANable2",
+                "Flash DFU"
+            ],
+            "group": "build"
+        }
+    ]
+}
