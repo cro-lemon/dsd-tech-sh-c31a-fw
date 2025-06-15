@@ -48,6 +48,9 @@
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
+/* USER CODE BEGIN 0 */
+extern void SysTick_LED_Update(void);
+/* USER CODE END 0 */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
@@ -183,6 +186,9 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   /* USER CODE BEGIN SysTick_IRQn 0 */
+
+  // LED制御モジュールの1ms更新
+  SysTick_LED_Update();
 
   /* USER CODE END SysTick_IRQn 0 */
   HAL_IncTick();

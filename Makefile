@@ -34,39 +34,28 @@ BUILD_DIR = build
 ######################################
 # source
 ######################################
-# C sources
-C_SOURCES =  \
-Core/Src/main.c \
-Core/Src/stm32g4xx_it.c \
-Core/Src/stm32g4xx_hal_msp.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_fdcan.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_rcc.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_rcc_ex.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_flash.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_flash_ex.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_flash_ramfunc.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_gpio.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_exti.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma_ex.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_pwr.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_pwr_ex.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_cortex.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_pcd.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_pcd_ex.c \
-Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_ll_usb.c \
-Core/Src/system_stm32g4xx.c \
-Core/Src/gpio.c \
-Core/Src/fdcan.c \
-USB_Device/Target/usbd_conf.c \
-USB_Device/App/usb_device.c \
-USB_Device/App/usbd_desc.c \
-USB_Device/App/usbd_cdc_if.c \
-Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c \
-Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c \
-Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c \
-Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c
+# Directories to search for C source files
+C_SOURCE_DIRS = \
+Core/Src \
+Drivers/STM32G4xx_HAL_Driver/Src \
+USB_Device/Target \
+USB_Device/App \
+Middlewares/ST/STM32_USB_Device_Library/Core/Src \
+Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src
+
+# Find all .c files in source directories
+C_SOURCES_RAW = $(foreach dir,$(C_SOURCE_DIRS),$(wildcard $(dir)/*.c))
+
+# Exclude template and unnecessary files
+EXCLUDE_PATTERNS = \
+%_template.c \
+%_template_tim.c \
+%hal_timebase_tim_template.c \
+%example.c \
+%test.c
+
+# Filter out excluded files
+C_SOURCES = $(filter-out $(EXCLUDE_PATTERNS),$(C_SOURCES_RAW))
 
 # ASM sources
 ASM_SOURCES =  \
