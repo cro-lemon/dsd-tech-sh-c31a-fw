@@ -24,12 +24,20 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "usbd_cdc_if.h"
+#include <string.h>
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+// システム状態
+typedef enum {
+    SYS_INIT = 0,
+    SYS_USB_READY,
+    SYS_RUNNING,
+    SYS_ERROR
+} system_state_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -45,18 +53,182 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+// USB CDC用バッファ
+uint8_t usb_tx_buffer[256];
+uint8_t usb_rx_buffer[256];
+volatile uint8_t usb_rx_flag = 0;
+volatile uint16_t usb_rx_length = 0;
 
+// システム状態
+volatile system_state_t system_state = SYS_INIT;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+void USB_CDC_RxCallback(uint8_t* Buf, uint32_t Len);
+void USB_CDC_SendString(const char* str);
+void System_Init(void);
+void USB_CDC_Process(void);
+void LED_Heartbeat(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+// USB CDC受信コールバック (usbd_cdc_if.c で呼び出される)
+void USB_CDC_RxCallback(uint8_t* Buf, uint32_t Len)
+{
+    if (Len < sizeof(usb_rx_buffer)) {
+        memcpy(usb_rx_buffer, Buf, Len);
+        usb_rx_length = Len;
+        usb_rx_flag = 1;
+    }
+}
 
+// USB CDC送信関数
+void USB_CDC_SendString(const char* str)
+{
+    uint16_t len = strlen(str);
+    if (len < sizeof(usb_tx_buffer)) {
+        memcpy(usb_tx_buffer, str, len);
+        CDC_Transmit_FS(usb_tx_buffer, len);
+    }
+}
+
+// システム初期化
+void System_Init(void)
+{
+    // LED初期化 (両方OFF)
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);  // LED1 OFF
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // LED2 OFF
+    
+    // システム状態更新
+    system_state = SYS_USB_READY;
+    
+    // USB enumeration待機
+    HAL_Delay(1000);
+    
+    // 起動メッセージ送信
+    USB_CDC_SendString("=== canble2.0 USB CDC Test ===\r\n");
+    USB_CDC_SendString("System Clock: 160MHz\r\n");
+    USB_CDC_SendString("FDCAN Clock: 160MHz\r\n");
+    USB_CDC_SendString("USB CDC Ready\r\n");
+    USB_CDC_SendString("Send any data to test echo\r\n");
+    USB_CDC_SendString("Commands: 'help', 'status', 'led1', 'led2'\r\n\r\n");
+    
+    // LED1点灯（起動完了）
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
+    system_state = SYS_RUNNING;
+}
+
+// コマンド処理
+void Process_Command(const char* cmd, uint16_t len)
+{
+    char command[64];
+    if (len >= sizeof(command)) len = sizeof(command) - 1;
+    memcpy(command, cmd, len);
+    command[len] = '\0';
+    
+    // 改行文字を削除
+    for (int i = 0; i < len; i++) {
+        if (command[i] == '\r' || command[i] == '\n') {
+            command[i] = '\0';
+            break;
+        }
+    }
+    
+    if (strcmp(command, "help") == 0) {
+        USB_CDC_SendString("Available commands:\r\n");
+        USB_CDC_SendString("  help   - Show this help\r\n");
+        USB_CDC_SendString("  status - Show system status\r\n");
+        USB_CDC_SendString("  led1   - Toggle LED1\r\n");
+        USB_CDC_SendString("  led2   - Toggle LED2\r\n");
+    }
+    else if (strcmp(command, "status") == 0) {
+        char status[200];
+        snprintf(status, sizeof(status), 
+                "System Status:\r\n"
+                "  Clock: %lu MHz\r\n"
+                "  State: %s\r\n"
+                "  Uptime: %lu ms\r\n",
+                SystemCoreClock / 1000000,
+                (system_state == SYS_RUNNING) ? "Running" : "Error",
+                HAL_GetTick());
+        USB_CDC_SendString(status);
+    }
+    else if (strcmp(command, "led1") == 0) {
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_15);
+        USB_CDC_SendString("LED1 toggled\r\n");
+    }
+    else if (strcmp(command, "led2") == 0) {
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_0);
+        USB_CDC_SendString("LED2 toggled\r\n");
+    }
+    else {
+        char response[100];
+        snprintf(response, sizeof(response), 
+                "Unknown command: '%s'\r\nType 'help' for available commands\r\n", 
+                command);
+        USB_CDC_SendString(response);
+    }
+}
+
+// USB CDCデータ処理
+void USB_CDC_Process(void)
+{
+    if (usb_rx_flag) {
+        usb_rx_flag = 0;
+        
+        // LED2点滅（データ受信表示）
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
+        
+        // コマンド処理またはエコーバック
+        if (usb_rx_length > 0) {
+            static uint32_t packet_count = 0;
+            packet_count++;
+            
+            // コマンド処理を試行
+            Process_Command((char*)usb_rx_buffer, usb_rx_length);
+            
+            // パケット統計
+            char stats[50];
+            snprintf(stats, sizeof(stats), "[Packet #%lu]\r\n\r\n", packet_count);
+            USB_CDC_SendString(stats);
+        }
+        
+        // LED2を少し遅らせてOFF
+        HAL_Delay(50);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
+    }
+}
+
+// LEDハートビート
+void LED_Heartbeat(void)
+{
+    static uint32_t last_tick = 0;
+    static uint8_t led_state = 0;
+    
+    if (HAL_GetTick() - last_tick >= 1000) {  // 1秒間隔
+        last_tick = HAL_GetTick();
+        
+        if (system_state == SYS_RUNNING) {
+            // LED1をハートビート（状態表示用）
+            led_state = !led_state;
+            // ハートビート中は短時間点滅
+            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
+            HAL_Delay(100);
+            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
+        } else if (system_state == SYS_ERROR) {
+            // エラー時は高速点滅
+            for (int i = 0; i < 5; i++) {
+                HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
+                HAL_Delay(100);
+                HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
+                HAL_Delay(100);
+            }
+        }
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -91,7 +263,8 @@ int main(void)
   MX_FDCAN1_Init();
   MX_USB_Device_Init();
   /* USER CODE BEGIN 2 */
-
+  // システム初期化
+  System_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -101,6 +274,14 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    // USB CDC処理
+    USB_CDC_Process();
+    
+    // LEDハートビート
+    LED_Heartbeat();
+    
+    // メインループ周期
+    HAL_Delay(10);  // 10ms周期
   }
   /* USER CODE END 3 */
 }
@@ -164,6 +345,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
+  system_state = SYS_ERROR;
   __disable_irq();
   while (1)
   {

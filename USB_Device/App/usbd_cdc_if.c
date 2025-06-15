@@ -22,7 +22,8 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-
+// main.cで定義されたコールバック関数の宣言
+extern void USB_CDC_RxCallback(uint8_t* Buf, uint32_t Len);
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -261,6 +262,10 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
+  // 受信データをアプリケーション層のコールバック関数に渡す
+  USB_CDC_RxCallback(Buf, *Len);
+  
+  // 次の受信を準備
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   return (USBD_OK);
