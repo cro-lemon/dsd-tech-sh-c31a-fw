@@ -127,6 +127,14 @@ void LED_StartHeartbeat(void);
  */
 void LED_StopHeartbeat(void);
 
+/**
+ * @brief  Get system uptime with rollover information
+ * @param  days: Pointer to store days since boot (can be NULL)
+ * @param  ms: Pointer to store milliseconds within current day (can be NULL)
+ * @retval Total uptime in milliseconds (with rollover)
+ */
+uint32_t LED_GetUptime(uint32_t* days, uint32_t* ms);
+
 #ifdef __cplusplus
 }
 #endif

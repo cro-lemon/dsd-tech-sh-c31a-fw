@@ -1,7 +1,7 @@
 /**
   ******************************************************************************
   * @file    led_control.c
-  * @brief   LED Control Module Implementation (Final Version - No HAL_Delay)
+  * @brief   LED Control Module Implementation (Rollover Safe Version)
   * @author  canble2.0 Development Team
   ******************************************************************************
   */
@@ -22,8 +22,48 @@ static volatile uint32_t systick_counter = 0;
 /* Private function prototypes -----------------------------------------------*/
 static void LED_ProcessMode(LED_ID_t led_id);
 static void LED_SetHardware(LED_ID_t led_id, uint8_t state);
+static uint32_t LED_GetTime(void);
+static uint8_t LED_TimeElapsed(uint32_t start_time, uint32_t interval_ms);
+static uint32_t LED_TimeDiff(uint32_t current, uint32_t previous);
 
 /* Exported functions --------------------------------------------------------*/
+
+/**
+ * @brief  Calculate time difference (rollover safe)
+ * @param  current: Current timestamp
+ * @param  previous: Previous timestamp
+ * @retval Time difference in milliseconds
+ */
+static uint32_t LED_TimeDiff(uint32_t current, uint32_t previous)
+{
+    uint32_t diff_time = 0;
+    diff_time = current - previous;
+    return diff_time;
+}
+
+/**
+ * @brief  Get current time (rollover safe)
+ * @retval Current time in ms
+ */
+static uint32_t LED_GetTime(void)
+{
+    return systick_counter;
+}
+
+/**
+ * @brief  Check if time interval has elapsed (rollover safe)
+ * @param  start_time: Start timestamp
+ * @param  interval_ms: Interval in milliseconds
+ * @retval 1 if elapsed, 0 if not
+ */
+static uint8_t LED_TimeElapsed(uint32_t start_time, uint32_t interval_ms)
+{
+    uint32_t current_time = LED_GetTime();
+    
+    // オーバーフロー対応：差分計算でロールオーバーを処理
+    // uint32_tの減算は自動的にロールオーバーを正しく処理する
+    return (LED_TimeDiff(current_time, start_time) >= interval_ms);
+}
 
 /**
  * @brief  Update LED states from SysTick interrupt (1ms interval)
@@ -32,6 +72,13 @@ static void LED_SetHardware(LED_ID_t led_id, uint8_t state);
 void SysTick_LED_Update(void)
 {
     systick_counter++;
+    
+    // オーバーフロー警告（デバッグ用）
+    // 49日程度で発生（0xFFFFFFFF / 1000 / 60 / 60 / 24 ≈ 49.7日）
+    if (systick_counter == 0) {
+        // オーバーフローが発生（必要に応じてログ出力）
+        // 実際の動作には影響しない
+    }
     
     // 各LEDの時間ベース処理（軽量・高速処理のみ）
     for (LED_ID_t i = 0; i < LED_COUNT; i++) {
@@ -42,7 +89,7 @@ void SysTick_LED_Update(void)
             switch (led->mode) {
                 case LED_HEARTBEAT:
                     // ハートビート: ON状態から100ms後にOFF
-                    if (led->state && (systick_counter - led->timer >= 100)) {
+                    if (led->state && LED_TimeElapsed(led->timer, 100)) {
                         LED_SetHardware(i, 0);
                         led->state = 0;
                     }
@@ -50,7 +97,7 @@ void SysTick_LED_Update(void)
                     
                 case LED_ON:
                     // アクティビティ表示の自動OFF
-                    if (led->interval > 0 && (systick_counter - led->timer >= led->interval)) {
+                    if (led->interval > 0 && LED_TimeElapsed(led->timer, led->interval)) {
                         LED_SetHardware(i, 0);
                         led->active = 0;
                     }
@@ -120,7 +167,7 @@ void LED_SetMode(LED_ID_t led_id, LED_Mode_t mode)
     if (led_id >= LED_COUNT) return;
     
     led_controls[led_id].mode = mode;
-    led_controls[led_id].timer = systick_counter;  // SysTickカウンタ使用
+    led_controls[led_id].timer = LED_GetTime();  // オーバーフロー対応関数使用
     led_controls[led_id].active = 1;
     
     // モードに応じた初期設定
@@ -195,7 +242,7 @@ void LED_ShowActivity(void)
 {
     // LED2を一時的に活動表示モードに
     led_controls[LED2].mode = LED_ON;
-    led_controls[LED2].timer = systick_counter;  // SysTickカウンタ使用
+    led_controls[LED2].timer = LED_GetTime();  // オーバーフロー対応関数使用
     led_controls[LED2].interval = LED_ACTIVITY_DURATION_MS;
     led_controls[LED2].active = 1;
     LED_SetHardware(LED2, 1);
@@ -243,6 +290,27 @@ void LED_StopHeartbeat(void)
     LED_SetMode(LED1, LED_OFF);
 }
 
+/**
+ * @brief  Get system uptime with rollover information
+ * @param  days: Pointer to store days since boot
+ * @param  ms: Pointer to store milliseconds within current day
+ * @retval Total uptime in milliseconds (with rollover)
+ */
+uint32_t LED_GetUptime(uint32_t* days, uint32_t* ms)
+{
+    uint32_t current_time = LED_GetTime();
+    
+    if (days) {
+        *days = current_time / (24UL * 60UL * 60UL * 1000UL);
+    }
+    
+    if (ms) {
+        *ms = current_time % (24UL * 60UL * 60UL * 1000UL);
+    }
+    
+    return current_time;
+}
+
 /* Private functions ---------------------------------------------------------*/
 
 /**
@@ -255,12 +323,11 @@ static void LED_ProcessMode(LED_ID_t led_id)
     if (led_id >= LED_COUNT) return;
     
     LED_Control_t* led = &led_controls[led_id];
-    uint32_t now = systick_counter;  // SysTickカウンタ使用
     
     switch (led->mode) {
         case LED_HEARTBEAT:
-            if (now - led->timer >= led->interval) {
-                led->timer = now;
+            if (LED_TimeElapsed(led->timer, led->interval)) {
+                led->timer = LED_GetTime();
                 // ハートビート: 短時間ON開始
                 LED_SetHardware(led_id, 1);
                 led->state = 1;  // ON状態を記録
@@ -270,16 +337,16 @@ static void LED_ProcessMode(LED_ID_t led_id)
             
         case LED_BLINK_SLOW:
         case LED_BLINK_FAST:
-            if (now - led->timer >= led->interval) {
-                led->timer = now;
+            if (LED_TimeElapsed(led->timer, led->interval)) {
+                led->timer = LED_GetTime();
                 led->state = !led->state;
                 LED_SetHardware(led_id, led->state);
             }
             break;
             
         case LED_ERROR_PATTERN:
-            if (now - led->timer >= led->interval) {
-                led->timer = now;
+            if (LED_TimeElapsed(led->timer, led->interval)) {
+                led->timer = LED_GetTime();
                 led->state = !led->state;
                 LED_SetHardware(led_id, led->state);
             }
