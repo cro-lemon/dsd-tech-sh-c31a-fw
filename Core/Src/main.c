@@ -84,11 +84,6 @@ void USB_CDC_RxCallback(uint8_t* Buf, uint32_t Len)
     for (uint32_t i = 0; i < Len; i++) {
         char ch = (char)Buf[i];
         
-        // エコーバック（入力文字を表示）
-        if (ch >= 32 && ch <= 126) {  // 印字可能文字のみエコー
-            CDC_Transmit_FS((uint8_t*)&ch, 1);
-        }
-        
         // 改行コード処理
         if (ch == '\r' || ch == '\n') {
             if (line_buffer_pos > 0) {
@@ -114,9 +109,15 @@ void USB_CDC_RxCallback(uint8_t* Buf, uint32_t Len)
         else if (ch >= 32 && ch <= 126) {  // 印字可能文字
             if (line_buffer_pos < LINE_BUFFER_SIZE - 1) {
                 line_buffer[line_buffer_pos++] = ch;
+                // エコーバック（1文字ずつ直接送信）
+                uint32_t timeout = HAL_GetTick() + 10;
+                while (CDC_Transmit_FS((uint8_t*)&ch, 1) == USBD_BUSY) {
+                    if (HAL_GetTick() > timeout) break;
+                    HAL_Delay(1);
+                }
             }
         }
-        // 制御文字は無視（既にエコー済み）
+        // 制御文字は無視
     }
 }
 
@@ -124,9 +125,15 @@ void USB_CDC_RxCallback(uint8_t* Buf, uint32_t Len)
 void USB_CDC_SendString(const char* str)
 {
     uint16_t len = strlen(str);
-    if (len < sizeof(usb_tx_buffer)) {
-        memcpy(usb_tx_buffer, str, len);
-        CDC_Transmit_FS(usb_tx_buffer, len);
+    if (len == 0) return;
+    
+    // 送信可能になるまで待機
+    uint32_t timeout = HAL_GetTick() + 100;  // 100ms timeout
+    while (CDC_Transmit_FS((uint8_t*)str, len) == USBD_BUSY) {
+        if (HAL_GetTick() > timeout) {
+            return;  // タイムアウト
+        }
+        HAL_Delay(1);
     }
 }
 
@@ -170,10 +177,15 @@ void Process_Command(const char* cmd)
     
     if (strcmp(cmd, "help") == 0) {
         USB_CDC_SendString("Available commands:\r\n");
+        HAL_Delay(50);  // 送信間隔
         USB_CDC_SendString("  help   - Show this help\r\n");
+        HAL_Delay(50);
         USB_CDC_SendString("  status - Show system status\r\n");
+        HAL_Delay(50);
         USB_CDC_SendString("  led1   - Toggle LED1\r\n");
+        HAL_Delay(50);
         USB_CDC_SendString("  led2   - Toggle LED2\r\n");
+        HAL_Delay(50);
         USB_CDC_SendString("  clear  - Clear screen\r\n");
     }
     else if (strcmp(cmd, "status") == 0) {
